@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  postgresql: # Keeping this as 'postgresql' as the service name for clarity in Trino config
+    image: postgres:15
+    container_name: postgresql_db # Renamed for clarity and consistency. If you prefer 'postgres', change it.
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: sampledb
+      POSTGRES_USER: trino
+      POSTGRES_PASSWORD: trino
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      # Make sure you have a 'postgres/init.sql' file if you use this line.
+      # If not, comment it out or create an empty init.sql
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck: # Essential for Trino to wait for PostgreSQL
+      test: ["CMD-SHELL", "pg_isready -U trino -d sampledb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 15s # Give PostgreSQL ample time to start
+    networks:
+      - trino_network # Connect to the custom network
+
+  trino: # This service name remains 'trino' as per your setup
+    image: trinodb/trino:latest # Using your specified image, but 'trino/trino:444' is safer
+    container_name: trino
+    restart: always
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./trino/config:/etc/trino # Corrected internal path
+    healthcheck: # Essential for Docker Compose to know when Trino is truly ready
+      test: ["CMD", "curl", "-f", "http://trino:8080/v1/info"] # Checks Trino's internal health
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s # Give Trino ample time to start
+    depends_on: # Ensures Trino waits for PostgreSQL to be healthy
+      postgresql: # Note: This refers to the service name, 'postgresql' in this corrected compose file
+        condition: service_healthy
+    networks:
+      - trino_network # Connect to the custom network
+
+volumes:
+  pg_data: # Define the named volume for PostgreSQL data
+
+networks:
+  trino_network: # Define the custom network
+    driver: bridge
