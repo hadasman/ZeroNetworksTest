@@ -1,24 +1,8 @@
-from typing import List, Dict, Any
-
-import psycopg2
 import requests
 from trino.dbapi import Connection
 
-
-class DataValidationException(Exception):
-    pass
-
-
-DB_CONFIG = {
-    "host": "localhost",
-    "database": "sampledb",
-    "user": "trino",
-    "password": "trino",
-    "port": "5432"
-}
-
-FACT_TABLE_NAME = 'spacex_launches'
-AGGREGATED_TABLE_NAME = 'agg_spacex_launches'
+from src.global_variables import DataValidationException, FACT_TABLE_NAME, AGGREGATED_TABLE_NAME
+from src.postgres import Postgres
 
 
 def fetch_latest_lauch_data_from_api(url: str):
@@ -38,53 +22,43 @@ def parse_and_validate_api_data(raw_launches: dict):
     else:
         payload_mass = 0
 
+    engine_start_time = raw_launches['static_fire_date_unix']
+    launch_time = raw_launches['date_unix']
+    if engine_start_time:
+        launch_delay = abs(raw_launches['date_unix'] - engine_start_time)
+    else:
+        launch_delay = 0
+
     return {
         'id': raw_launches['id'],
         'name': raw_launches['name'],
-        'date_unix': raw_launches['date_unix'],
+        'launch_date_unix': launch_time,
         'success': raw_launches['success'],
         'payload_mass': payload_mass,
-        'details': raw_launches['details']
+        'details': raw_launches['details'],
+        'engine_start_time_unix': engine_start_time,
+        'launch_delay_hours': round(launch_delay / 3600)
     }
 
 
-def insert_launches_to_table(table_name: str, launch_data: dict):
+def insert_launches_to_table(table_name: str, launch_data: dict, postgres: Postgres):
     """
     Inserts a single launch record (from a dictionary) into the spacex_launches table.
 
     Args:
         launch_data (dict): A dictionary representing a single launch record.
-        db_params (dict): Dictionary with database connection parameters.
+        table_name (str): table name into which to insert the data.
     """
     columns = launch_data.keys()
     values = launch_data.values()
-    cols_sql = ", ".join(columns)
+    postgres.insert(table_name, list(columns), list(values))
 
-    # SQL part for value placeholders: (%s, %s, ...)
-    # %s is a placeholder for parameterized queries, which prevents SQL injection
-    placeholders = ", ".join(['%s'] * len(values))
-    insert_sql = f"INSERT INTO {table_name} ({cols_sql}) VALUES ({placeholders});"
 
-    postgres_connection = None
-    try:
-        postgres_connection = psycopg2.connect(**DB_CONFIG)
-        cursor = postgres_connection.cursor()
-        cursor.execute(insert_sql, list(values))
-        postgres_connection.commit()
-        cursor.close()
-    except (Exception, psycopg2.Error) as error:
-        if postgres_connection:
-            postgres_connection.rollback()
-        raise Exception(f"Error inserting data, rolling back. Error: {error}")
-    finally:
-        if postgres_connection:
-            postgres_connection.close()
-
-def insert
-
-def aggregate_data(table_name: str, aggregated_table_name: str):
+def aggregate_data(table_name: str, aggregated_table_name: str, postgres: Postgres):
     """
-    README: since average is a non-linear metric it would need to be re-calculated with each row insertion. I would
+    README:
+    - Aggregation is on the year part of launch date
+    - Since average is a non-linear metric it would need to be re-calculated with each row insertion. I would
     deal with this in the following way:
         - For linear metrics I would add the new values to the relevant rows (only the ones which should be updated)
         - For non-linear metrics I would re-calculate the metric using the launches non-aggregated table and then insert
@@ -98,27 +72,35 @@ def aggregate_data(table_name: str, aggregated_table_name: str):
     The aggregation logic should be in Python or SQL and kept up to date when new data is  ingested.
     """
 
-
-    trino_sql_query = f"""
+    aggregation_logic = "EXTRACT(YEAR FROM FROM_UNIXTIME(launch_date_unix))"
+    agg_column_name = "aggregation_year"
+    aggregation_query = f"""
             SELECT
-                EXTRACT(YEAR FROM date_utc) AS aggregation_year,
+                {aggregation_logic} AS {agg_column_name},
                 COUNT(id) AS total_launches,
                 COUNT(CASE WHEN success = TRUE THEN id END) AS total_successful_launches,
-                AVG(total_payload_mass) AS average_payload_mass
+                AVG(payload_mass) AS average_payload_mass,
+                AVG(launch_delay_hours) AS average_delay_hours
             FROM
                 {table_name}
             WHERE
-                date_utc IS NOT NULL
+                launch_date_unix IS NOT NULL
             GROUP BY
-                EXTRACT(YEAR FROM date_utc)
+                {aggregation_logic}
             ORDER BY
-                aggregation_year
+                {agg_column_name}
             """
-    aggregated_data = fetch_from_trino(trino_sql_query)
+    aggregated_data_rows = fetch_from_trino(aggregation_query)
+    column_names = list(aggregated_data_rows[0].keys())
+    data_to_insert = []
+    for launch in aggregated_data_rows:
+        data_to_insert.append([launch.get(col) for col in column_names])
+
+    postgres.upsert(aggregated_table_name, column_names, data_to_insert, agg_column_name)
 
 
 def fetch_from_trino(query: str, host: str = 'localhost', port: int = 8080, user: str = 'trino',
-                                           catalog: str = 'postgresql', schema: str = 'public'):
+                     catalog: str = 'postgresql', schema: str = 'public'):
     conn = None
     cur = None
     aggregated_data = []
@@ -127,9 +109,8 @@ def fetch_from_trino(query: str, host: str = 'localhost', port: int = 8080, user
         cur = conn.cursor()
         cur.execute(query)
 
-        # fetchall() gets all rows as a list of tuples
         column_names = [desc[0] for desc in cur.description]
-        rows = cur.fetchall()
+        rows = cur.fetchall()  # fetchall() gets all rows as a list of tuples
         for row in rows:
             aggregated_data.append(dict(zip(column_names, row)))
 
@@ -147,9 +128,15 @@ if __name__ == "__main__":
     """
     Assumptions:
         - All "details" messages are the same structure, when exist. I am disregarding successful launches with None details in the mass average.
+        - Failed launches are also counted in the calculation of mass average
+        - If no static_fire_date (sometimes None), delay = 0
     """
-raw_launches = fetch_latest_lauch_data_from_api('https://api.spacexdata.com/v5/launches/latest')
-launches = parse_and_validate_api_data(raw_launches)
-insert_launches_to_table(FACT_TABLE_NAME, launches)  # append-only, incremental ingestion
+    postgres_object = Postgres()
 
-aggregated_df = aggregate_data(AGGREGATED_TABLE_NAME, launches)
+    raw_launches = fetch_latest_lauch_data_from_api('https://api.spacexdata.com/v5/launches/latest')
+    launches = parse_and_validate_api_data(raw_launches)
+    insert_launches_to_table(FACT_TABLE_NAME, launches, postgres_object)  # append-only, incremental ingestion
+
+    aggregate_data(FACT_TABLE_NAME, AGGREGATED_TABLE_NAME, postgres_object)
+
+    postgres_object.postgres_connection.close()
