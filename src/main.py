@@ -22,17 +22,14 @@ def parse_and_validate_api_data(raw_launches: dict):
     else:
         payload_mass = 0
 
-    engine_start_time = raw_launches['static_fire_date_unix']
-    launch_time = raw_launches['date_unix']
-
     return {
         'id': raw_launches['id'],
         'name': raw_launches['name'],
-        'launch_date_unix': launch_time,
+        'launch_date_unix': raw_launches['date_unix'],
         'success': raw_launches['success'],
         'payload_mass': payload_mass,
         'details': raw_launches['details'],
-        'engine_start_time_unix': engine_start_time
+        'engine_start_time_unix': raw_launches['static_fire_date_unix']
     }
 
 

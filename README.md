@@ -28,10 +28,14 @@ CREATE TABLE agg_spacex_launches (
 # Design
 The pipeline consists of the following layers:
 - Data ingestion (fetching the latest launch from the API)
-- Data parsing and validation ()
-- Aggregation: since average is a non-linear metric it would need to be re-calculated with each row insertion, so I use 
-  upsert in order to update these entries. Since the only incoming data is current and the aggregation is on a whole 
-  year, I fetch only the last year for the purpose of this upsert (so in the example it will not upsert because the API has very old data).
+- Data parsing and validation
+  - Make sure mandatory columns are not null
+  - Parse `details` field to extract total payload mass 
+- Append new data to FACT table
+- Fetch aggregated data using trino and upsert to aggregation table
+  - Aggregation: since average is a non-linear metric it would need to be re-calculated with each row insertion, so I use 
+    upsert in order to update these entries. Since the only incoming data is current and the aggregation is on a whole 
+    year, I fetch only the last year for the purpose of this upsert (so in the example it will not upsert because the API has very old data).
   
 
 # Assumptions
@@ -39,11 +43,6 @@ The pipeline consists of the following layers:
 - Failed launches are also counted in the calculation of mass average
 - If no static_fire_date (sometimes None), delay = 0
 - Aggregation is on the year part of launch date
-    - Since average is a non-linear metric it would need to be re-calculated with each row insertion. I would
-    deal with this in the following way:
-        - For linear metrics I would add the new values to the relevant rows (only the ones which should be updated)
-        - For non-linear metrics I would re-calculate the metric using the launches non-aggregated table and then insert
-            the values to the relevant rows.
 
 # Testing
 In order to execute the pipeline run the `__main__` part of the `src/main.py` file.
