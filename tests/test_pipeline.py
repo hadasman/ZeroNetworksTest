@@ -20,19 +20,18 @@ class TestPipeline(TestCase):
                 success BOOLEAN,
                 details TEXT,
                 payload_mass REAL,
-                engine_start_time_unix BIGINT,
-                launch_delay_hours INT);
+                engine_start_time_unix BIGINT);
 
-            INSERT INTO test_spacex_launches (id, name, launch_date_unix, success, details, payload_mass, engine_start_time_unix, launch_delay_hours)
+            INSERT INTO test_spacex_launches (id, name, launch_date_unix, success, details, payload_mass, engine_start_time_unix)
             VALUES
-                ('sx_2020_001', 'Starlink-13', 1599004800, TRUE, 'Routine Starlink deployment, successful recovery.', 15600.0, 1599004700, 1),
-                ('sx_2021_002', 'Transporter-2 Failure', 1625097600, FALSE, 'Anomaly during second stage burn, mission failed.', 3000.0, 1625097500, 0),
-                ('sx_2021_003', 'Crew-3', 1636588800, TRUE, 'NASA Crew-3 mission to the ISS, successful splashdown.', 0.0, 1636588700, 0),
-                ('sx_2022_004', 'Starlink-4_31', 1658448000, TRUE, 'Another batch of Starlink satellites to orbit.', 16000.0, 1658447900, 0),
-                ('sx_2022_005', 'Nilesat 301', 1654732800, FALSE, 'Payload deployed but failed to reach target orbit.', 4500.0, 1654732700, 2),
-                ('sx_2022_008', 'CRS-25', 1658092800, TRUE, 'Commercial Resupply Services mission to ISS.', 50.0, 1658092700, 3),
-                ('sx_2023_006', 'Transporter-6', 1673625600, TRUE, 'Dedicated rideshare mission, multiple smallsats.', 2000.0, 1673625500, 4),
-                ('sx_2023_007', 'USSF-67', 1673884800, FALSE, 'Pre-launch anomaly, mission scrubbed.', 0.0, NULL, 5);
+                ('sx_2020_001', 'Starlink-13', 1599004800, TRUE, 'Routine Starlink deployment, successful recovery.', 15600.0, 1599008400),
+                ('sx_2021_002', 'Transporter-2 Failure', 1625097600, FALSE, 'Anomaly during second stage burn, mission failed.', 3000.0, 1625101200),
+                ('sx_2021_003', 'Crew-3', 1636588800, TRUE, 'NASA Crew-3 mission to the ISS, successful splashdown.', 0.0, 1636596000),
+                ('sx_2022_004', 'Starlink-4_31', 1658448000, TRUE, 'Another batch of Starlink satellites to orbit.', 16000.0, 1658451600),
+                ('sx_2022_005', 'Nilesat 301', 1654732800, FALSE, 'Payload deployed but failed to reach target orbit.', 4500.0, 1654736400),
+                ('sx_2022_008', 'CRS-25', 1658092800, TRUE, 'Commercial Resupply Services mission to ISS.', 50.0, 1658092800),
+                ('sx_2023_006', 'Transporter-6', 1673625600, TRUE, 'Dedicated rideshare mission, multiple smallsats.', 2000.0, 1673629200),
+                ('sx_2023_007', 'USSF-67', 1673884800, FALSE, 'Pre-launch anomaly, mission scrubbed.', 0.0, 1673884800);
     """
 
     def setUp(self):
@@ -93,9 +92,9 @@ class TestPipeline(TestCase):
                                 'average_payload_mass', 'average_delay_hours'],
                                [
                                    [2020, 1, 1, 15600.0, 1.0],
-                                   [2021, 2, 1, 1500.0, 0.0],
-                                   [2022, 3, 2, 6850.0, 1.6666666666666667],
-                                   [2023, 2, 1, 1000.0, 4.5]
+                                   [2021, 2, 1, 1500.0, 1.5],
+                                   [2022, 3, 2, 6850.0, 0.6666666666666666],
+                                   [2023, 2, 1, 1000.0, 0.5]
                                ], 'aggregation_year')]
 
         self.assertEqual(expected_calls, actual_calls)
